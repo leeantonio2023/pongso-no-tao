@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>蘭嶼開放資料地圖 · Pongso no Tao Data Map</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+:root{
+  --ink:#1a2e3a; --accent:#2c7d4e; --accent2:#1976d2;
+  --village:#c84a2a; --rock:#7a4ec8; --beach:#1f8fb4; --mountain:#2f8a4b; --facility:#d49423;
+  --bg:#eef5f1; --paper:#fbf9f0;
+  --shadow:0 6px 24px rgba(0,40,30,.15);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%;font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+body{overflow:hidden}
+
+header{
+  position:fixed;top:0;left:0;right:0;height:56px;z-index:1000;
+  background:rgba(251,249,240,.96);backdrop-filter:blur(8px);
+  border-bottom:1px solid rgba(0,80,60,.15);
+  display:flex;align-items:center;padding:0 18px;gap:14px;
+}
+header h1{margin:0;font-size:17px;letter-spacing:2px;font-weight:700;color:var(--ink)}
+header h1 .sub{font-size:11px;letter-spacing:1px;color:#5d8077;margin-left:8px;font-weight:400}
+header .nav-links{margin-left:auto;display:flex;gap:8px}
+header .nav-links a, header .nav-links button{
+  font-size:12px;color:#5d8077;text-decoration:none;border:1px solid #b7d4c2;
+  border-radius:999px;padding:5px 12px;background:#fff;cursor:pointer;font-family:inherit
+}
+header .nav-links a:hover, header .nav-links button:hover{background:rgba(44,125,78,.08);color:var(--accent);border-color:var(--accent)}
+
+#map{position:fixed;top:56px;left:0;right:0;bottom:0;background:#a6d3e0}
+
+/* Legend */
+#legend{
+  position:fixed;top:74px;right:14px;z-index:900;width:240px;
+  background:rgba(251,249,240,.96);backdrop-filter:blur(6px);
+  border:1px solid rgba(0,80,60,.18);border-radius:14px;padding:12px;box-shadow:var(--shadow);
+  max-height:calc(100vh - 90px);overflow-y:auto;
+}
+#legend h3{margin:0 0 8px;font-size:13px;letter-spacing:1px;color:#3a5447;display:flex;align-items:center;gap:6px;font-weight:700}
+#legend .sect{border-top:1px dashed #b7d4c2;padding-top:8px;margin-top:8px}
+#legend label{display:flex;align-items:center;gap:8px;padding:4px;font-size:12.5px;cursor:pointer;color:#3a5447}
+#legend label:hover{background:rgba(44,125,78,.05);border-radius:4px}
+#legend input{accent-color:var(--accent)}
+#legend .swatch{width:14px;height:14px;border-radius:50%;display:inline-block;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.15)}
+#legend .badge{margin-left:auto;font-size:10px;color:#5d8077;background:#e6efea;padding:1px 6px;border-radius:8px}
+#legend .src{font-size:10px;color:#7d9a8e;margin-top:8px;padding-top:6px;border-top:1px dashed #b7d4c2;line-height:1.5}
+
+/* Weather card */
+#weather-card{
+  position:fixed;top:74px;left:14px;z-index:900;width:200px;
+  background:rgba(255,255,255,.96);backdrop-filter:blur(6px);
+  border:1px solid rgba(0,80,60,.18);border-radius:12px;padding:10px 14px;
+  box-shadow:var(--shadow);display:none;font-size:12px;line-height:1.55;
+}
+#weather-card.show{display:block}
+#weather-card .wc-lbl{font-size:10px;color:#5d8077;letter-spacing:1px}
+#weather-card .wc-temp{font-size:26px;font-weight:700;color:var(--accent2)}
+#weather-card .wc-row{display:flex;justify-content:space-between;margin-top:3px}
+#weather-card .wc-row b{color:var(--ink)}
+#weather-card .wc-attr{font-size:9px;color:#aaa;margin-top:6px}
+
+/* Map markers */
+.lbl-village{
+  font-size:11px;font-weight:700;background:rgba(255,255,255,.95);
+  border:1.5px solid var(--accent);border-radius:10px;padding:1px 8px;
+  color:var(--accent);white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);
+  transform:translateY(8px)
+}
+.lbl-tag{
+  font-size:10px;font-weight:600;color:#fff;background:rgba(26,46,58,.85);
+  border-radius:4px;padding:1px 5px;white-space:nowrap;
+  text-shadow:0 0 2px rgba(0,0,0,.5);transform:translateY(8px)
+}
+.landmark-dot{
+  border:2px solid #fff;border-radius:50%;
+  box-shadow:0 1px 4px rgba(0,0,0,.45);cursor:pointer;
+}
+.obs-marker{font-size:18px;text-shadow:0 0 3px #fff,0 0 3px #fff;cursor:pointer}
+.poi-marker{font-size:14px;text-shadow:0 0 3px #fff,0 0 3px #fff;cursor:pointer;opacity:.9}
+
+/* Side panel */
+#panel{
+  position:fixed;top:56px;right:0;bottom:0;width:380px;max-width:90vw;z-index:1100;
+  background:var(--paper);border-left:1px solid rgba(0,80,60,.2);
+  box-shadow:-8px 0 24px rgba(0,40,30,.15);
+  transform:translateX(100%);transition:transform .3s cubic-bezier(.2,.8,.2,1);
+  display:flex;flex-direction:column;
+}
+#panel.open{transform:translateX(0)}
+#panel .ph{padding:18px 22px 14px;border-bottom:1px solid rgba(0,80,60,.15);position:relative}
+#panel .ph .close{position:absolute;top:12px;right:14px;background:transparent;border:0;font-size:22px;cursor:pointer;color:#5d8077;width:32px;height:32px;border-radius:50%}
+#panel .ph .close:hover{background:rgba(0,80,60,.1)}
+#panel .ph .cat-chip{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;letter-spacing:1px;color:#fff;margin-bottom:8px}
+#panel .ph h2{margin:0;font-size:20px;letter-spacing:1.5px;color:var(--ink)}
+#panel .ph .coord{margin:6px 0 0;font-size:11px;color:#5d8077;font-family:monospace}
+#panel .pd{padding:14px 22px;font-size:13px;line-height:1.7;color:#3a5447;border-bottom:1px dashed #b7d4c2;background:rgba(230,239,234,.5)}
+#panel .pe{padding:14px 22px;font-size:12px;line-height:1.7;color:#3a5447}
+#panel .pe h3{font-size:12px;color:#5d8077;letter-spacing:1px;margin:0 0 6px;text-transform:uppercase;font-weight:700}
+#panel .pe a{color:var(--accent);text-decoration:none;display:block;padding:4px 0}
+#panel .pe a:hover{text-decoration:underline}
+
+/* 3D Modal */
+#map3d-modal{position:fixed;inset:0;z-index:2500;background:#000;display:none;flex-direction:column}
+#map3d-modal.open{display:flex}
+#map3d-modal .m3d-header{
+  position:absolute;top:0;left:0;right:0;z-index:10;
+  background:linear-gradient(180deg,rgba(0,0,0,.7),transparent);
+  padding:14px 22px;color:#fff;display:flex;align-items:center;gap:12px;
+}
+#map3d-modal .m3d-header h2{margin:0;font-size:18px;letter-spacing:2px}
+#map3d-modal .m3d-header .m3d-sub{font-size:11px;opacity:.7;letter-spacing:1px}
+#map3d-modal .m3d-close{margin-left:auto;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer}
+#map3d-modal .m3d-close:hover{background:rgba(255,255,255,.25)}
+#map3d-canvas{flex:1;width:100%}
+#map3d-loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:16px;z-index:5}
+.m3d-marker{
+  border:3px solid #fff;border-radius:50%;width:16px;height:16px;cursor:pointer;
+  box-shadow:0 0 0 2px rgba(255,255,255,.4),0 2px 4px rgba(0,0,0,.5);
+}
+.m3d-marker.s-village{background:var(--village)}
+.m3d-marker.s-rock{background:var(--rock)}
+.m3d-marker.s-beach{background:var(--beach)}
+.m3d-marker.s-mountain{background:var(--mountain)}
+.m3d-marker.s-facility{background:var(--facility)}
+
+/* MCP intro popup */
+#mcp-intro{
+  position:fixed;bottom:14px;left:14px;z-index:900;
+  background:linear-gradient(135deg,#fff,#f3faf5);
+  border:1px solid var(--accent);border-radius:14px;padding:14px 16px;
+  box-shadow:var(--shadow);max-width:340px;font-size:12px;line-height:1.55;
+}
+#mcp-intro .h{font-weight:700;color:var(--accent);font-size:13px;display:flex;align-items:center;gap:6px;margin-bottom:6px}
+#mcp-intro .close-x{float:right;background:transparent;border:0;color:#5d8077;cursor:pointer;font-size:14px;margin-left:8px}
+#mcp-intro code{background:#eef5f1;padding:1px 5px;border-radius:3px;font-size:11px}
+#mcp-intro a{color:var(--accent);text-decoration:none}
+#mcp-intro a:hover{text-decoration:underline}
+
+@media(max-width:760px){
+  #legend{top:auto;bottom:14px;right:14px;width:200px;padding:10px;max-height:50vh}
+  #weather-card{top:auto;bottom:14px;left:14px;width:160px}
+  #mcp-intro{display:none}
+  #panel{width:100%}
+  header h1{font-size:14px}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>蘭嶼 開放資料地圖 <span class="sub">Pongso no Tao · Live Data Map</span></h1>
+  <div class="nav-links">
+    <button id="open-3d-btn">🌐 3D 地形</button>
+    <a href="./">📷 照片版</a>
+  </div>
+</header>
+<div id="map"></div>
+
+<div id="legend">
+  <h3>🗺️ 地標分類</h3>
+  <label><input type="checkbox" data-cat="village" checked><span class="swatch" style="background:var(--village)"></span>部落 <span class="badge" id="cnt-village">6</span></label>
+  <label><input type="checkbox" data-cat="rock" checked><span class="swatch" style="background:var(--rock)"></span>奇岩景點 <span class="badge" id="cnt-rock">12</span></label>
+  <label><input type="checkbox" data-cat="beach" checked><span class="swatch" style="background:var(--beach)"></span>海岸/草原 <span class="badge" id="cnt-beach">9</span></label>
+  <label><input type="checkbox" data-cat="mountain" checked><span class="swatch" style="background:var(--mountain)"></span>山區/水池 <span class="badge" id="cnt-mountain">5</span></label>
+  <label><input type="checkbox" data-cat="facility" checked><span class="swatch" style="background:var(--facility)"></span>設施 <span class="badge" id="cnt-facility">7</span></label>
+  <div class="sect">
+    <h3>🌐 即時開放資料層</h3>
+    <label><input type="checkbox" id="layer-trails"> 🥾 OSM 步道</label>
+    <label><input type="checkbox" id="layer-weather"> 🌡️ 即時天氣</label>
+    <label><input type="checkbox" id="layer-obs"> 🦉 物種觀測</label>
+    <label><input type="checkbox" id="layer-pois"> 🏨 住宿/餐飲</label>
+  </div>
+  <div class="src">
+    <b>資料來源</b><br>
+    • OSM Overpass API<br>
+    • open-meteo.com<br>
+    • iNaturalist API<br>
+    • Twinkle Hub MCP (規劃中)
+  </div>
+</div>
+
+<div id="weather-card"></div>
+
+<div id="panel">
+  <div class="ph">
+    <button class="close" onclick="closePanel()">×</button>
+    <div class="cat-chip" id="ph-cat">部落</div>
+    <h2 id="ph-name">蘭嶼</h2>
+    <p class="coord" id="ph-coord">—</p>
+  </div>
+  <div class="pd" id="ph-desc">—</div>
+  <div class="pe">
+    <h3>外部資料連結</h3>
+    <div id="ph-links"></div>
+  </div>
+</div>
+
+<div id="map3d-modal">
+  <div class="m3d-header">
+    <div>
+      <h2>🌐 蘭嶼 3D 地形視角</h2>
+      <div class="m3d-sub">arnis 風格 · OSM + AWS Terrain Tiles · 拖曳=旋轉、Ctrl+拖曳=平移、滾輪=縮放</div>
+    </div>
+    <button class="m3d-close" onclick="close3D()">×</button>
+  </div>
+  <div id="map3d-loading">⏳ 載入 3D 地形中…</div>
+  <div id="map3d-canvas"></div>
+</div>
+
+<div id="mcp-intro">
+  <button class="close-x" onclick="this.parentElement.style.display='none'">×</button>
+  <div class="h">🤖 關於 Twinkle MCP 整合</div>
+  本頁所有「即時資料層」目前直接從公開 API 拉取（無需 API key）。
+  未來可改用 <a href="https://hub.twinkleai.tw/" target="_blank">Twinkle Hub MCP</a>
+  作為統一介面，把 蘭嶼步道、氣象、觀測 等 20 個資料領域用 <code>opendata-*</code>
+  tools 一次串接，讓 AI agent 也能直接查詢。
+</div>
+
+<script>
+/* ===== LANDMARKS (verified via OSM + Google Maps) ===== */
+const LANDMARKS = [
+  {name:'椰油部落',lat:22.0503,lng:121.5133,cat:'village',desc:'達悟語 Yayo，蘭嶼最大、人口最多的部落，鄉公所、椰油國小與開元港皆位於此。'},
+  {name:'漁人部落',lat:22.0388,lng:121.5290,cat:'village',desc:'達悟語 Iratay，西海岸南段。傳統涼台與拼板舟工坊隨處可見。'},
+  {name:'紅頭部落',lat:22.0353,lng:121.5320,cat:'village',desc:'達悟語 Imorod，蘭嶼南端西側。傳統石板屋與半穴居最完整保存的聚落之一。'},
+  {name:'朗島部落',lat:22.0793,lng:121.5305,cat:'village',desc:'達悟語 Iraralay，位於蘭嶼北方，被三面山岳環抱。八月飛魚祭最盛。'},
+  {name:'東清部落',lat:22.0540,lng:121.5750,cat:'village',desc:'達悟語 Iranmilek，蘭嶼最早迎接日出的地方。東清灣的拼板舟一字排開。'},
+  {name:'野銀部落',lat:22.0356,lng:121.5720,cat:'village',desc:'達悟語 Ivalino，蘭嶼六大部落中保留最多傳統地下屋的聚落。'},
+  {name:'蘭嶼機場',lat:22.0287,lng:121.5337,cat:'facility',desc:'蘭嶼最南端，1,200 公尺跑道，德安航空德蘭機場 (KYD)。'},
+  {name:'開元港',lat:22.0584,lng:121.5082,cat:'facility',desc:'蘭嶼唯一的客貨港。每日往返後壁湖、富岡的客船在此進出。'},
+  {name:'蘭嶼鄉公所',lat:22.0246,lng:121.5564,cat:'facility',desc:'蘭嶼鄉行政中心，位於紅頭村。'},
+  {name:'蘭嶼燈塔',lat:22.0809,lng:121.5030,cat:'facility',desc:'西北端燈塔，海拔約 200 公尺，視野俯瞰開元港與紅頭岩。'},
+  {name:'蘭嶼文物館',lat:22.0256,lng:121.5393,cat:'facility',desc:'位於紅頭村，介紹達悟族文化、拼板舟、傳統服飾。'},
+  {name:'椰油國小',lat:22.0454,lng:121.5173,cat:'facility',desc:'椰油部落內，蘭嶼歷史最久的學校。'},
+  {name:'蘭嶼貯存場',lat:22.0050,lng:121.5922,cat:'facility',desc:'東南端低放射性廢料貯存設施，達悟族長期抗爭的議題地點。'},
+  {name:'紅頭岩',lat:22.0798,lng:121.5003,cat:'rock',desc:'西北海岸的海蝕洞口，因夕陽下岩體染成赤紅而得名。'},
+  {name:'玉女岩',lat:22.0803,lng:121.5174,cat:'rock',desc:'北海岸海蝕柱，狀似亭立的少女，是熱門攝影點。'},
+  {name:'五孔洞',lat:22.0810,lng:121.5210,cat:'rock',desc:'蘭嶼北海岸的海蝕洞群，達悟族傳統視為禁地。'},
+  {name:'饅頭岩',lat:22.0462,lng:121.5094,cat:'rock',desc:'西海岸圓潤如饅頭的礁岩，介於椰油與開元港之間。'},
+  {name:'母雞岩',lat:22.0820,lng:121.5568,cat:'rock',desc:'北海岸礁岩，姿態圓潤如母雞護雛。'},
+  {name:'雙獅岩',lat:22.0855,lng:121.5673,cat:'rock',desc:'北海岸兩座狀似伏臥獅子的海蝕岩。'},
+  {name:'軍艦岩',lat:22.0790,lng:121.5796,cat:'rock',desc:'東岸海中孤立礁岩，遠望宛如軍艦泊海，二戰時曾遭誤炸。'},
+  {name:'龍頭岩',lat:22.0019,lng:121.5884,cat:'rock',desc:'蘭嶼最南端，造型如騰空昂揚的巨龍，氣勢磅礡。'},
+  {name:'老人岩',lat:22.0035,lng:121.5723,cat:'rock',desc:'南端的海蝕岩，狀似老人側身。'},
+  {name:'鋼盔岩',lat:22.0239,lng:121.5978,cat:'rock',desc:'東南端形似頭盔的圓潤礁岩。'},
+  {name:'睡獅岩',lat:22.0198,lng:121.6004,cat:'rock',desc:'東南端形似伏臥獅子的礁岩。'},
+  {name:'象鼻岩',lat:22.0179,lng:121.6004,cat:'rock',desc:'東南端有一個天然海蝕拱門，形似大象鼻子。'},
+  {name:'東清灣',lat:22.0573,lng:121.5654,cat:'beach',desc:'蘭嶼最美的弧形海灣，沙岸平緩，拼板舟並列灘頭。'},
+  {name:'野銀冷泉',lat:22.0330,lng:121.5762,cat:'beach',desc:'東南海邊天然冷泉，水質清澈、終年低溫，達悟族重要的取水地。'},
+  {name:'青青草原',lat:22.0056,lng:121.5722,cat:'beach',desc:'蘭嶼南端的廣闊草原，臨海崖岸壯麗，是觀夕陽的人氣景點。'},
+  {name:'八代灣',lat:22.0319,lng:121.5511,cat:'beach',desc:'西南海岸海灣，達悟族重要漁場。'},
+  {name:'貝殼砂',lat:22.0753,lng:121.5677,cat:'beach',desc:'東北海岸的貝殼砂灘。'},
+  {name:'情人洞',lat:22.0620,lng:121.5735,cat:'beach',desc:'東岸海蝕洞，浪濤穿洞而過，富有傳說色彩。'},
+  {name:'蘭嶼潮池',lat:22.0076,lng:121.5940,cat:'beach',desc:'東南端浮潛勝地，潮池內海洋生物豐富。'},
+  {name:'朗島祕境',lat:22.0812,lng:121.5225,cat:'beach',desc:'北海岸隱密小灣，少有人到的私房景點。'},
+  {name:'東清祕境',lat:22.0603,lng:121.5693,cat:'beach',desc:'東岸隱密海灣，距東清部落不遠。'},
+  {name:'蘭嶼氣象站',lat:22.0370,lng:121.5583,cat:'mountain',desc:'紅頭山周邊的中央氣象署觀測站，海拔 324 公尺。'},
+  {name:'小天池',lat:22.0774,lng:121.5101,cat:'mountain',desc:'位於蘭嶼西北山區的小型堰塞湖，需穿過熱帶雨林步道。'},
+  {name:'大天池',lat:22.0208,lng:121.5728,cat:'mountain',desc:'蘭嶼最大的高山湖泊，海拔 280 公尺，達悟族禁忌之地。'},
+  {name:'一百分涼亭',lat:22.0805,lng:121.5359,cat:'mountain',desc:'東北環島公路上的觀景涼亭，視野遼闊。'},
+  {name:'乳頭山',lat:22.0627,lng:121.5686,cat:'mountain',desc:'東岸環島公路旁的山徑入口，山形渾圓如乳頭。'},
+];
+
+const CAT_COLOR = {village:'#c84a2a', rock:'#7a4ec8', beach:'#1f8fb4', mountain:'#2f8a4b', facility:'#d49423'};
+const CAT_NAME  = {village:'部落', rock:'奇岩景點', beach:'海岸/草原', mountain:'山區/水池', facility:'設施'};
+const BBOX = '21.99,121.49,22.10,121.61';
+const LANYU_CENTER = {lat: 22.045, lng: 121.545};
+
+/* ===== STATE ===== */
+const state = {
+  filters: new Set(['village','rock','beach','mountain','facility']),
+};
+const cache = {};
+
+/* ===== LEAFLET 2D MAP ===== */
+const lmap = L.map('map', {zoomControl:true}).setView([22.045, 121.545], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom:19
+}).addTo(lmap);
+
+const llabelLayer = L.layerGroup().addTo(lmap);
+const lmarkLayer = L.layerGroup().addTo(lmap);
+let trailsLayer, obsLayer, poisLayer;
+
+function renderLandmarks(){
+  llabelLayer.clearLayers();
+  lmarkLayer.clearLayers();
+  LANDMARKS.forEach(lm=>{
+    if(!state.filters.has(lm.cat)) return;
+    // Label
+    const isV = lm.cat === 'village';
+    const lblHtml = `<div class="${isV?'lbl-village':'lbl-tag'}">${lm.name}</div>`;
+    L.marker([lm.lat,lm.lng], {icon:L.divIcon({html:lblHtml,className:'',iconSize:null,iconAnchor:[0,0]}), interactive:false, zIndexOffset:100}).addTo(llabelLayer);
+    // Clickable dot
+    const dotHtml = `<div class="landmark-dot" style="width:14px;height:14px;background:${CAT_COLOR[lm.cat]}"></div>`;
+    const m = L.marker([lm.lat,lm.lng], {icon:L.divIcon({html:dotHtml,className:'',iconSize:[14,14],iconAnchor:[7,7]}), zIndexOffset:500}).addTo(lmarkLayer);
+    m.on('click', ()=>openPanel(lm));
+  });
+  updateCounts();
+}
+
+function updateCounts(){
+  const counts = {village:0,rock:0,beach:0,mountain:0,facility:0};
+  LANDMARKS.forEach(lm => counts[lm.cat]++);
+  Object.keys(counts).forEach(k=>{ const el=document.getElementById('cnt-'+k); if(el) el.textContent = counts[k]; });
+}
+
+/* ===== PANEL ===== */
+function openPanel(lm){
+  document.getElementById('ph-name').textContent = lm.name;
+  document.getElementById('ph-coord').textContent = `${lm.lat.toFixed(5)}, ${lm.lng.toFixed(5)}`;
+  const chip = document.getElementById('ph-cat');
+  chip.textContent = CAT_NAME[lm.cat]; chip.style.background = CAT_COLOR[lm.cat];
+  document.getElementById('ph-desc').textContent = lm.desc;
+  // External links
+  const links = document.getElementById('ph-links');
+  links.innerHTML = `
+    <a href="https://www.google.com/maps/search/?api=1&query=${lm.lat},${lm.lng}" target="_blank">🗺️ 在 Google Maps 開啟</a>
+    <a href="https://www.openstreetmap.org/?mlat=${lm.lat}&mlon=${lm.lng}&zoom=17" target="_blank">🌍 在 OpenStreetMap 開啟</a>
+    <a href="https://www.inaturalist.org/observations?lat=${lm.lat}&lng=${lm.lng}&radius=2&place_id=any" target="_blank">🦉 附近 iNaturalist 物種觀測</a>
+    <a href="https://api.open-meteo.com/v1/forecast?latitude=${lm.lat}&longitude=${lm.lng}&current=temperature_2m,precipitation&timezone=Asia/Taipei" target="_blank">🌡️ 該地天氣 API</a>
+  `;
+  document.getElementById('panel').classList.add('open');
+}
+function closePanel(){ document.getElementById('panel').classList.remove('open'); }
+
+/* ===== LIVE DATA LAYERS ===== */
+// OSM trails
+async function toggleTrails(on){
+  if(trailsLayer){ lmap.removeLayer(trailsLayer); trailsLayer = null; }
+  if(!on) return;
+  try{
+    if(!cache.trails){
+      const q = `[out:json][timeout:25];(way["highway"~"path|footway|track|cycleway|steps"](${BBOX});way["route"="hiking"](${BBOX}););out geom;`;
+      const r = await fetch('https://overpass-api.de/api/interpreter', {method:'POST', body:'data='+encodeURIComponent(q)});
+      cache.trails = (await r.json()).elements || [];
+    }
+    trailsLayer = L.layerGroup();
+    cache.trails.forEach(w=>{
+      if(!w.geometry) return;
+      const pts = w.geometry.map(p=>[p.lat,p.lon]);
+      L.polyline(pts, {color:'#1976d2', weight:3, opacity:.75, dashArray:'4 3'}).addTo(trailsLayer);
+    });
+    trailsLayer.addTo(lmap);
+  }catch(e){ alert('OSM 步道載入失敗: '+e.message); }
+}
+
+// Weather
+function wxIcon(c){return c===0?'☀️':c<=3?'⛅':c<=49?'🌫️':c<=69?'🌧️':c<=79?'🌨️':c<=99?'⛈️':'🌤️'}
+async function toggleWeather(on){
+  const card = document.getElementById('weather-card');
+  if(!on){ card.classList.remove('show'); return; }
+  try{
+    if(!cache.weather){
+      const u = `https://api.open-meteo.com/v1/forecast?latitude=${LANYU_CENTER.lat}&longitude=${LANYU_CENTER.lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia/Taipei&forecast_days=3`;
+      cache.weather = await (await fetch(u)).json();
+    }
+    const w = cache.weather, c = w.current, d = w.daily;
+    card.innerHTML = `<div class="wc-lbl">蘭嶼 · ${c.time.slice(11,16)}</div>
+      <div class="wc-temp">${wxIcon(c.weather_code)} ${c.temperature_2m}°C</div>
+      <div class="wc-row"><span>濕度</span><b>${c.relative_humidity_2m}%</b></div>
+      <div class="wc-row"><span>風速</span><b>${c.wind_speed_10m} km/h</b></div>
+      <div class="wc-row"><span>降雨</span><b>${c.precipitation} mm</b></div>
+      <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #b7d4c2;font-size:11px;color:#5d8077">未來 3 天：</div>
+      ${d.time.slice(0,3).map((t,i)=>`<div class="wc-row"><span>${t.slice(5)}</span><b>${d.temperature_2m_min[i]}°-${d.temperature_2m_max[i]}° ${d.precipitation_sum[i]>1?'🌧️':''}</b></div>`).join('')}
+      <div class="wc-attr">via open-meteo.com</div>`;
+    card.classList.add('show');
+  }catch(e){ alert('天氣載入失敗: '+e.message); }
+}
+
+// iNaturalist observations
+async function toggleObs(on){
+  if(obsLayer){ lmap.removeLayer(obsLayer); obsLayer = null; }
+  if(!on) return;
+  try{
+    if(!cache.obs){
+      const u = `https://api.inaturalist.org/v1/observations?lat=${LANYU_CENTER.lat}&lng=${LANYU_CENTER.lng}&radius=8&per_page=100&quality_grade=research&photos=true`;
+      cache.obs = (await (await fetch(u)).json()).results || [];
+    }
+    obsLayer = L.layerGroup();
+    cache.obs.forEach(o=>{
+      if(!o.geojson) return;
+      const [lng,lat] = o.geojson.coordinates;
+      const taxon = o.taxon || {};
+      const iconName = (taxon.iconic_taxon_name||'').toLowerCase();
+      const emoji = ({aves:'🐦', mammalia:'🦌', reptilia:'🦎', amphibia:'🐸', plantae:'🌿', insecta:'🦋', arachnida:'🕷️', mollusca:'🐚', actinopterygii:'🐟', fungi:'🍄'})[iconName] || '🌱';
+      const m = L.marker([lat,lng], {icon:L.divIcon({html:`<div class="obs-marker">${emoji}</div>`,className:'',iconSize:[22,22],iconAnchor:[11,11]}), zIndexOffset:3000}).addTo(obsLayer);
+      const photo = (o.photos&&o.photos[0]) ? o.photos[0].url.replace('square','small') : '';
+      m.bindPopup(`<div style="font-size:12px;max-width:200px">
+        <b>${taxon.preferred_common_name||taxon.name||'未知物種'}</b><br>
+        <i>${taxon.name||''}</i><br>
+        觀察日期: ${(o.observed_on||'').slice(0,10)}<br>
+        ${photo?`<img src="${photo}" style="width:100%;border-radius:4px;margin-top:4px">`:''}
+        <a href="${o.uri}" target="_blank" style="font-size:10px">在 iNaturalist 看詳細</a>
+      </div>`);
+    });
+    obsLayer.addTo(lmap);
+  }catch(e){ alert('物種觀測載入失敗: '+e.message); }
+}
+
+// POIs
+async function togglePois(on){
+  if(poisLayer){ lmap.removeLayer(poisLayer); poisLayer = null; }
+  if(!on) return;
+  try{
+    if(!cache.pois){
+      const q = `[out:json][timeout:25];(node["tourism"~"hotel|guest_house|hostel|attraction|information"](${BBOX});node["amenity"~"restaurant|cafe|fast_food|fuel"](${BBOX}););out;`;
+      const r = await fetch('https://overpass-api.de/api/interpreter', {method:'POST', body:'data='+encodeURIComponent(q)});
+      cache.pois = (await r.json()).elements || [];
+    }
+    poisLayer = L.layerGroup();
+    cache.pois.forEach(p=>{
+      const t = p.tags||{};
+      const emoji = (t.tourism==='hotel'||t.tourism==='guest_house'||t.tourism==='hostel') ? '🏨'
+        : t.tourism==='attraction' ? '📍' : t.tourism==='information' ? 'ℹ️'
+        : (t.amenity==='restaurant'||t.amenity==='cafe'||t.amenity==='fast_food') ? '🍴'
+        : t.amenity==='fuel' ? '⛽' : '📍';
+      const m = L.marker([p.lat,p.lon], {icon:L.divIcon({html:`<div class="poi-marker">${emoji}</div>`,className:'',iconSize:[18,18],iconAnchor:[9,9]}), zIndexOffset:2500}).addTo(poisLayer);
+      m.bindTooltip(t.name||t['name:zh']||emoji, {direction:'top'});
+    });
+    poisLayer.addTo(lmap);
+  }catch(e){ alert('POI 載入失敗: '+e.message); }
+}
+
+/* ===== 3D VIEW ===== */
+let map3d = null;
+function open3D(){
+  document.getElementById('map3d-modal').classList.add('open');
+  if(map3d){ setTimeout(()=>map3d.resize(),100); return; }
+  setTimeout(()=>{
+    map3d = new maplibregl.Map({
+      container:'map3d-canvas',
+      style:{
+        version:8,
+        sources:{
+          osm:{type:'raster',tiles:['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png','https://b.tile.openstreetmap.org/{z}/{x}/{y}.png','https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OSM',maxzoom:19}
+        },
+        layers:[{id:'osm',type:'raster',source:'osm'}]
+      },
+      center:[LANYU_CENTER.lng, LANYU_CENTER.lat],
+      zoom:13, pitch:60, bearing:-20, maxPitch:85
+    });
+    map3d.addControl(new maplibregl.NavigationControl({visualizePitch:true}));
+    map3d.on('load', ()=>{
+      map3d.addSource('terrain',{type:'raster-dem',tiles:['https://elevation-tiles-prod.s3.amazonaws.com/v2/terrarium/{z}/{x}/{y}.png'],encoding:'terrarium',tileSize:256,maxzoom:14});
+      map3d.setTerrain({source:'terrain',exaggeration:1.5});
+      document.getElementById('map3d-loading').style.display = 'none';
+      // Add landmarks
+      LANDMARKS.forEach(lm=>{
+        const el = document.createElement('div');
+        el.className = 'm3d-marker s-'+lm.cat;
+        el.title = lm.name;
+        el.addEventListener('click', ()=>{ close3D(); setTimeout(()=>openPanel(lm),300); });
+        new maplibregl.Marker({element:el}).setLngLat([lm.lng, lm.lat]).addTo(map3d);
+      });
+    });
+  }, 100);
+}
+function close3D(){ document.getElementById('map3d-modal').classList.remove('open'); }
+
+/* ===== INIT ===== */
+renderLandmarks();
+document.querySelectorAll('#legend input[data-cat]').forEach(cb=>{
+  cb.addEventListener('change', ()=>{
+    const cat = cb.dataset.cat;
+    if(cb.checked) state.filters.add(cat); else state.filters.delete(cat);
+    renderLandmarks();
+  });
+});
+document.getElementById('layer-trails').addEventListener('change', e=>toggleTrails(e.target.checked));
+document.getElementById('layer-weather').addEventListener('change', e=>toggleWeather(e.target.checked));
+document.getElementById('layer-obs').addEventListener('change', e=>toggleObs(e.target.checked));
+document.getElementById('layer-pois').addEventListener('change', e=>togglePois(e.target.checked));
+document.getElementById('open-3d-btn').addEventListener('click', open3D);
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){ closePanel(); close3D(); }
+});
+</script>
+</body>
+</html>
