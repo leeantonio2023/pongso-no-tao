@@ -138,7 +138,7 @@ header .meta-link{margin-left:auto;font-size:12px;color:#7a634a;border:1px solid
 #lightbox{position:fixed;inset:0;z-index:2000;background:rgba(20,16,8,.95);display:none;align-items:center;justify-content:center;flex-direction:column}
 #lightbox.open{display:flex}
 #lightbox .lb-stage{position:relative;display:flex;align-items:center;justify-content:center;max-width:96vw;max-height:84vh}
-#lightbox img,#lightbox video{max-width:96vw;max-height:84vh;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.6);background:#222;display:block}
+#lightbox img,#lightbox video{max-width:96vw;max-height:84vh;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.6);background:#222;display:block;image-rendering:auto;-ms-interpolation-mode:bicubic}
 #lightbox video{outline:none}
 #lightbox .lb-loader{position:absolute;color:#fbf6e6;font-size:14px;background:rgba(0,0,0,.6);padding:8px 14px;border-radius:6px;display:none}
 #lightbox .lb-loader.show{display:block}
@@ -399,6 +399,9 @@ function renderRoutes(){
 }
 
 
+let HIRES_AVAILABLE = null;
+let VIDEOS_AVAILABLE = null;
+
 function updateCurrent(){
   if(state.filteredIdx.length === 0) return;
   if(state.cursor < 0) state.cursor = 0;
@@ -515,7 +518,6 @@ function trackClick(e){
   updateCurrent();
 }
 
-/* ===== PANEL & LIGHTBOX ===== */
 function openPanel(name){
   const c = CLUSTERS.find(x=>x.name===name);
   if(!c) return;
@@ -552,33 +554,63 @@ function showLightbox(){
   const img = document.getElementById('lb-img');
   const vid = document.getElementById('lb-video');
   const loader = document.getElementById('lb-loader');
-  // Reset both
   img.style.display = 'none'; img.src = '';
   vid.style.display = 'none'; vid.pause(); vid.removeAttribute('src'); vid.load();
-  loader.classList.add('show');
+  loader.classList.remove('show');
 
   if(p.kind === 'video'){
-    vid.src = videoPath(p);
-    vid.style.display = 'block';
-    vid.onloadeddata = ()=> loader.classList.remove('show');
-    vid.onerror = ()=>{
-      loader.textContent = '⚠️ 影片載入失敗';
-    };
-    // try autoplay (muted to satisfy browser policies)
-    vid.muted = false;
+    if(VIDEOS_AVAILABLE === false){
+      img.style.display = 'block';
+      img.src = `data:image/jpeg;base64,${p.thumb}`;
+      loader.textContent = '📹 影片資料夾 videos/ 尚未部署 — 此處顯示影片首格縮圖';
+      loader.classList.add('show');
+    } else {
+      vid.src = videoPath(p);
+      vid.style.display = 'block';
+      loader.textContent = '⏳ 載入影片中…';
+      loader.classList.add('show');
+      vid.onloadeddata = ()=> loader.classList.remove('show');
+      vid.onerror = ()=>{
+        VIDEOS_AVAILABLE = false;
+        showLightbox();
+        showDeployNotice();
+      };
+      vid.muted = false;
+    }
   } else {
     img.style.display = 'block';
-    // Start with the low-res thumb so something is visible immediately
     img.src = `data:image/jpeg;base64,${p.thumb}`;
-    // Then load the hi-res
-    const hi = new Image();
-    hi.onload = ()=>{ img.src = hi.src; loader.classList.remove('show'); };
-    hi.onerror = ()=>{ loader.textContent = '⚠️ 高解析載入失敗'; };
-    hi.src = hiresPath(p);
+    if(HIRES_AVAILABLE === false){
+      loader.classList.remove('show');
+    } else {
+      loader.textContent = '⏳ 載入高解析中…';
+      loader.classList.add('show');
+      const hi = new Image();
+      hi.onload = ()=>{
+        if(state.lightbox.photos[state.lightbox.idx] === p){ img.src = hi.src; }
+        loader.classList.remove('show'); HIRES_AVAILABLE = true;
+      };
+      hi.onerror = ()=>{
+        HIRES_AVAILABLE = false;
+        loader.classList.remove('show');
+        showDeployNotice();
+      };
+      hi.src = hiresPath(p);
+    }
   }
   const kind = p.kind === 'video' ? `影片 (${p.duration||0}s)` : '照片';
   document.getElementById('lb-info').textContent =
     `${p.cluster_name} · ${kind} · ${p.dt||''} · ${idx+1}/${photos.length} · ${p.video || p.file}`;
+}
+
+function showDeployNotice(){
+  if(document.getElementById('deploy-notice')) return;
+  const n = document.createElement('div');
+  n.id = 'deploy-notice';
+  n.style.cssText = 'position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:4000;background:#fbf6e6;border:1px solid #d6c79b;border-radius:10px;padding:10px 16px;box-shadow:0 6px 24px rgba(40,30,15,.25);font-size:13px;color:#5b4a35;max-width:90vw;text-align:center;line-height:1.6';
+  n.innerHTML = '💡 <b>提示</b>：高解析照片資料夾（photos/）與影片資料夾（videos/）尚未推到 GitHub，目前 lightbox 顯示的是內嵌縮圖。完成 push 後即可看到 1024px 高解析與影片播放。<button onclick="this.parentElement.remove()" style="margin-left:10px;background:transparent;border:1px solid #d6c79b;border-radius:6px;cursor:pointer;padding:2px 8px">關閉</button>';
+  document.body.appendChild(n);
+  setTimeout(()=>{ const e=document.getElementById('deploy-notice'); if(e) e.style.opacity=0.7; }, 8000);
 }
 
 function navLightbox(d){
@@ -623,8 +655,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   });
 });
 
-/* ===== HOVER PREVIEW (hi-res lazy-load + scroll wheel zoom) ===== */
-const hoverState = {scale:1, currentPhoto:null};
+const hoverState = {scale:1, panX:0, panY:0, currentPhoto:null};
 let hoverHideTimer = null;
 
 function showHoverPreviewForPhoto(p, sourceEl){
@@ -634,10 +665,9 @@ function showHoverPreviewForPhoto(p, sourceEl){
   const img = document.getElementById('hp-img');
   const loading = document.getElementById('hp-loading');
   if(!img) return;
-  // Instant: show thumb
   img.src = `data:image/jpeg;base64,${p.thumb}`;
+  hoverState.panX = 0; hoverState.panY = 0;
   img.style.transform = 'translate(-50%,-50%) scale(1)';
-  loading.classList.add('show');
   document.getElementById('hp-info-place').textContent =
     `${p.cluster_name} · ${(p.dt||'').slice(5,16)}${p.kind==='video'?' · 📹 影片':''}`;
   document.getElementById('hp-info-zoom').textContent = '1.0×';
@@ -645,13 +675,21 @@ function showHoverPreviewForPhoto(p, sourceEl){
   prev.classList.add('show');
   positionPreview(sourceEl);
   clearTimeout(hoverHideTimer);
-  // Lazy-load hi-res
-  const hi = new Image();
-  hi.onload = ()=>{
-    if(hoverState.currentPhoto === p){ img.src = hi.src; loading.classList.remove('show'); }
-  };
-  hi.onerror = ()=>{ loading.classList.remove('show'); };
-  hi.src = hiresPath(p);
+  if(HIRES_AVAILABLE === false){
+    loading.classList.remove('show');
+  } else {
+    loading.classList.add('show');
+    const hi = new Image();
+    hi.onload = ()=>{
+      if(hoverState.currentPhoto === p){ img.src = hi.src; loading.classList.remove('show'); }
+      HIRES_AVAILABLE = true;
+    };
+    hi.onerror = ()=>{
+      HIRES_AVAILABLE = false;
+      loading.classList.remove('show');
+    };
+    hi.src = hiresPath(p);
+  }
 }
 
 function positionPreview(sourceEl){
@@ -686,6 +724,17 @@ function attachPhotoHover(el, getPhoto){
   el.addEventListener('mouseleave', scheduleHidePreview);
 }
 
+function applyHoverTransform(){
+  const img = document.getElementById('hp-img');
+  if(!img) return;
+  img.style.transform = 'translate(calc(-50% + ' + hoverState.panX + 'px), calc(-50% + ' + hoverState.panY + 'px)) scale(' + hoverState.scale + ')';
+  const wrap = document.querySelector('#hover-preview .hp-wrap');
+  if(wrap){
+    if(hoverState.scale > 1.01){ wrap.style.cursor = hoverState.dragging ? 'grabbing' : 'grab'; }
+    else { wrap.style.cursor = 'zoom-in'; }
+  }
+}
+
 function initHoverPreview(){
   const thumbWrap = document.getElementById('tl-thumb-wrap');
   attachPhotoHover(thumbWrap, function(){
@@ -697,19 +746,70 @@ function initHoverPreview(){
     prev.addEventListener('wheel', function(e){
       e.preventDefault();
       const delta = -Math.sign(e.deltaY) * 0.2;
+      const oldScale = hoverState.scale;
       hoverState.scale = Math.max(0.5, Math.min(5, hoverState.scale + delta));
-      const img = document.getElementById('hp-img');
-      img.style.transform = 'translate(-50%,-50%) scale(' + hoverState.scale + ')';
+      // reset pan when zooming back to 1.0 or below
+      if(hoverState.scale <= 1.01){ hoverState.panX = 0; hoverState.panY = 0; }
+      else {
+        // scale pan proportionally so zoom feels natural
+        const ratio = hoverState.scale / oldScale;
+        hoverState.panX *= ratio;
+        hoverState.panY *= ratio;
+      }
+      applyHoverTransform();
       document.getElementById('hp-info-zoom').textContent = hoverState.scale.toFixed(1) + '×';
     }, {passive:false});
+
+    // Drag-to-pan
+    const wrap = prev.querySelector('.hp-wrap');
+    let dragStart = null;
+    let dragOriginPan = {x:0, y:0};
+    let suppressClick = false;
+    if(wrap){
+      wrap.addEventListener('mousedown', function(e){
+        if(hoverState.scale <= 1.01) return; // no panning when not zoomed
+        e.preventDefault();
+        dragStart = {x: e.clientX, y: e.clientY};
+        dragOriginPan = {x: hoverState.panX, y: hoverState.panY};
+        hoverState.dragging = true;
+        applyHoverTransform();
+      });
+      window.addEventListener('mousemove', function(e){
+        if(!dragStart) return;
+        e.preventDefault();
+        const dx = e.clientX - dragStart.x;
+        const dy = e.clientY - dragStart.y;
+        hoverState.panX = dragOriginPan.x + dx;
+        hoverState.panY = dragOriginPan.y + dy;
+        // clamp so image stays at least 60% visible
+        const wrapRect = wrap.getBoundingClientRect();
+        const limit = wrapRect.width * hoverState.scale * 0.6;
+        hoverState.panX = Math.max(-limit, Math.min(limit, hoverState.panX));
+        hoverState.panY = Math.max(-limit, Math.min(limit, hoverState.panY));
+        applyHoverTransform();
+        if(Math.abs(dx) > 4 || Math.abs(dy) > 4) suppressClick = true;
+      });
+      window.addEventListener('mouseup', function(){
+        if(!dragStart) return;
+        dragStart = null;
+        hoverState.dragging = false;
+        applyHoverTransform();
+        setTimeout(()=>{ suppressClick = false; }, 80);
+      });
+    }
+
     prev.addEventListener('click', function(){
-      // click hover preview → open lightbox at current photo
+      if(suppressClick) return; // ignore click from drag-release
+      if(hoverState.scale > 1.01) return; // when zoomed, click is for panning
       if(hoverState.currentPhoto){
         const idx = PHOTO_INDEX.get(hoverState.currentPhoto.file);
         if(idx >= 0) openLightboxAll(idx);
       }
     });
-    prev.addEventListener('mouseleave', function(){ prev.classList.remove('show'); });
+    prev.addEventListener('mouseleave', function(){
+      if(hoverState.dragging) return; // don't hide while dragging
+      prev.classList.remove('show');
+    });
   }
 }
 
