@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>蘭嶼 3D 地形 · Pongso no Tao Terrain</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+:root{
+  --accent:#2c7d4e; --ink:#1a2e3a;
+  --village:#c84a2a; --rock:#7a4ec8; --beach:#1f8fb4; --mountain:#2f8a4b; --facility:#d49423;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%;font-family:"PingFang TC","Noto Sans TC",system-ui,sans-serif;color:#fff;background:#000;overflow:hidden}
+
+#map{position:fixed;inset:0}
+
+header{
+  position:fixed;top:0;left:0;right:0;height:54px;z-index:1000;
+  background:linear-gradient(180deg,rgba(0,0,0,.7),rgba(0,0,0,.3) 80%,transparent);
+  padding:0 20px;display:flex;align-items:center;gap:14px;
+  pointer-events:none;
+}
+header *{pointer-events:auto}
+header h1{margin:0;font-size:17px;letter-spacing:2px;font-weight:700;text-shadow:0 2px 4px rgba(0,0,0,.5)}
+header h1 .sub{font-size:11px;letter-spacing:1px;opacity:.85;margin-left:8px;font-weight:400}
+header .nav{margin-left:auto;display:flex;gap:8px}
+header .nav a, header .nav button{
+  font-size:12px;color:#fff;text-decoration:none;
+  background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);
+  border-radius:999px;padding:6px 12px;cursor:pointer;font-family:inherit;
+  backdrop-filter:blur(8px);
+}
+header .nav a:hover, header .nav button:hover{background:rgba(255,255,255,.3)}
+
+#controls{
+  position:fixed;top:68px;right:14px;z-index:900;width:220px;
+  background:rgba(20,30,40,.85);backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.15);border-radius:14px;
+  padding:14px;color:#fff;
+}
+#controls h3{margin:0 0 8px;font-size:12px;letter-spacing:2px;opacity:.7;text-transform:uppercase}
+#controls .ctl{margin:10px 0;font-size:12px}
+#controls .ctl label{display:block;margin-bottom:4px;opacity:.85}
+#controls .ctl input[type=range]{width:100%;accent-color:var(--accent)}
+#controls .val{font-variant-numeric:tabular-nums;color:#7fd99a;float:right}
+#controls .legend{border-top:1px dashed rgba(255,255,255,.2);padding-top:10px;margin-top:10px}
+#controls .legend label{display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;opacity:.9;cursor:pointer}
+#controls .legend .sw{width:11px;height:11px;border-radius:50%;border:2px solid #fff;display:inline-block}
+#controls .preset{display:flex;gap:6px;flex-wrap:wrap}
+#controls .preset button{
+  flex:1;min-width:60px;font-size:11px;padding:5px 6px;cursor:pointer;
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);
+  border-radius:6px;color:#fff;font-family:inherit;
+}
+#controls .preset button:hover{background:rgba(255,255,255,.2)}
+#controls .preset button.on{background:var(--accent);border-color:var(--accent)}
+
+#loading{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:rgba(20,30,40,.92);color:#fff;padding:18px 28px;
+  border-radius:14px;font-size:14px;z-index:1500;
+  border:1px solid rgba(255,255,255,.2);
+}
+#loading.hide{display:none}
+#loading .spin{display:inline-block;animation:spin 1s linear infinite;margin-right:8px}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+
+.lm-marker{
+  border:3px solid #fff;border-radius:50%;
+  width:14px;height:14px;cursor:pointer;
+  box-shadow:0 0 0 2px rgba(255,255,255,.4),0 2px 6px rgba(0,0,0,.6);
+  transition:transform .15s;
+}
+.lm-marker:hover{transform:scale(1.4)}
+.lm-marker.s-village{background:var(--village)}
+.lm-marker.s-rock{background:var(--rock)}
+.lm-marker.s-beach{background:var(--beach)}
+.lm-marker.s-mountain{background:var(--mountain)}
+.lm-marker.s-facility{background:var(--facility)}
+
+.lm-label{
+  position:absolute;bottom:18px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,.7);color:#fff;font-size:10px;font-weight:600;
+  padding:2px 6px;border-radius:4px;white-space:nowrap;
+  pointer-events:none;text-shadow:0 0 2px rgba(0,0,0,.8);
+}
+
+.maplibregl-popup{font-family:inherit}
+.maplibregl-popup-content{padding:14px;border-radius:10px;max-width:280px;font-size:13px;line-height:1.6}
+.maplibregl-popup-content .pop-name{font-size:16px;font-weight:700;margin:0 0 4px;color:var(--ink)}
+.maplibregl-popup-content .pop-cat{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;color:#fff;letter-spacing:1px;margin-bottom:6px}
+.maplibregl-popup-content .pop-desc{color:#3a5447;margin:6px 0}
+.maplibregl-popup-content .pop-coord{font-family:monospace;font-size:11px;color:#5d8077;margin-top:6px}
+.maplibregl-popup-content .pop-links{margin-top:8px;font-size:11px;border-top:1px dashed #ccc;padding-top:6px}
+.maplibregl-popup-content .pop-links a{color:var(--accent);text-decoration:none;display:block;padding:2px 0}
+
+#about{
+  position:fixed;bottom:14px;left:14px;z-index:900;
+  background:rgba(20,30,40,.8);backdrop-filter:blur(8px);
+  border:1px solid rgba(255,255,255,.15);border-radius:10px;
+  padding:8px 12px;color:#fff;font-size:11px;line-height:1.5;
+  max-width:300px;opacity:.9;
+}
+#about a{color:#7fd99a;text-decoration:none}
+#about .close-x{float:right;background:transparent;border:0;color:#fff;cursor:pointer;font-size:14px;margin-left:8px;opacity:.6}
+
+@media(max-width:760px){
+  #controls{top:auto;bottom:14px;right:14px;width:180px;padding:10px}
+  #about{display:none}
+  header h1{font-size:14px}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>蘭嶼 3D 地形 <span class="sub">Pongso no Tao · Terrain View</span></h1>
+  <div class="nav">
+    <a href="./">📷 照片版</a>
+    <a href="places.html">📍 地點版</a>
+    <a href="data.html">📊 資料版</a>
+  </div>
+</header>
+
+<div id="map"></div>
+
+<div id="loading"><span class="spin">⏳</span>載入 3D 地形中…</div>
+
+<div id="controls">
+  <h3>🎛️ 視角控制</h3>
+
+  <div class="ctl">
+    <label>高度誇張 <span class="val" id="val-exag">1.5×</span></label>
+    <input type="range" id="exag" min="1" max="4" step="0.1" value="1.5">
+  </div>
+
+  <div class="ctl">
+    <label>傾斜角 (pitch) <span class="val" id="val-pitch">60°</span></label>
+    <input type="range" id="pitch" min="0" max="85" step="1" value="60">
+  </div>
+
+  <div class="ctl">
+    <label>視角預設</label>
+    <div class="preset">
+      <button data-view="overview">俯瞰</button>
+      <button data-view="north" class="on">北望</button>
+      <button data-view="south">南望</button>
+      <button data-view="lighthouse">燈塔角</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <label><span class="sw" style="background:var(--village)"></span>部落</label>
+    <label><span class="sw" style="background:var(--rock)"></span>奇岩</label>
+    <label><span class="sw" style="background:var(--beach)"></span>海岸</label>
+    <label><span class="sw" style="background:var(--mountain)"></span>山區</label>
+    <label><span class="sw" style="background:var(--facility)"></span>設施</label>
+  </div>
+</div>
+
+<div id="about">
+  <button class="close-x" onclick="this.parentElement.style.display='none'">×</button>
+  <b>🌐 蘭嶼 3D 地形</b><br>
+  地形資料：<a href="https://github.com/tilezen/joerd" target="_blank">AWS Terrain Tiles</a> (DEM 全球公開)<br>
+  底圖：<a href="https://www.openstreetmap.org" target="_blank">OpenStreetMap</a><br>
+  渲染引擎：<a href="https://maplibre.org" target="_blank">MapLibre GL JS</a><br>
+  操作：拖曳=旋轉、滾輪=縮放、Ctrl+拖曳=平移
+</div>
+
+<script>
+/* ===== Lanyu landmarks (verified) ===== */
+const LANDMARKS = [
+  {name:'椰油部落',lat:22.0503,lng:121.5133,cat:'village',desc:'達悟語 Yayo，蘭嶼最大、人口最多的部落，鄉公所、椰油國小與開元港皆位於此。'},
+  {name:'漁人部落',lat:22.0388,lng:121.5290,cat:'village',desc:'達悟語 Iratay，西海岸南段。傳統涼台與拼板舟工坊隨處可見。'},
+  {name:'紅頭部落',lat:22.0353,lng:121.5320,cat:'village',desc:'達悟語 Imorod，蘭嶼南端西側。背靠紅頭山、面太平洋。'},
+  {name:'朗島部落',lat:22.0793,lng:121.5305,cat:'village',desc:'達悟語 Iraralay，蘭嶼北方，三面山岳環抱。八月飛魚祭最盛。'},
+  {name:'東清部落',lat:22.0540,lng:121.5750,cat:'village',desc:'達悟語 Iranmilek，蘭嶼最早迎日出之處。東清灣拼板舟一字排開。'},
+  {name:'野銀部落',lat:22.0356,lng:121.5720,cat:'village',desc:'達悟語 Ivalino，保留最多傳統地下屋的聚落。'},
+  {name:'蘭嶼機場',lat:22.0287,lng:121.5337,cat:'facility',desc:'蘭嶼最南端，1,200 m 跑道，德安航空 KYD。'},
+  {name:'開元港',lat:22.0584,lng:121.5082,cat:'facility',desc:'蘭嶼唯一的客貨港。'},
+  {name:'蘭嶼鄉公所',lat:22.0246,lng:121.5564,cat:'facility',desc:'蘭嶼鄉行政中心。'},
+  {name:'蘭嶼燈塔',lat:22.0809,lng:121.5030,cat:'facility',desc:'西北端燈塔，海拔 200 m。'},
+  {name:'蘭嶼文物館',lat:22.0256,lng:121.5393,cat:'facility',desc:'介紹達悟族文化。'},
+  {name:'椰油國小',lat:22.0454,lng:121.5173,cat:'facility',desc:'蘭嶼歷史最久的學校。'},
+  {name:'蘭嶼貯存場',lat:22.0050,lng:121.5922,cat:'facility',desc:'東南端低放射性廢料貯存設施。'},
+  {name:'紅頭岩',lat:22.0798,lng:121.5003,cat:'rock',desc:'西北海岸的海蝕洞口。'},
+  {name:'玉女岩',lat:22.0803,lng:121.5174,cat:'rock',desc:'北海岸海蝕柱，狀似亭立少女。'},
+  {name:'五孔洞',lat:22.0810,lng:121.5210,cat:'rock',desc:'北海岸的海蝕洞群，達悟族傳統視為禁地。'},
+  {name:'饅頭岩',lat:22.0462,lng:121.5094,cat:'rock',desc:'西海岸圓潤如饅頭的礁岩。'},
+  {name:'母雞岩',lat:22.0820,lng:121.5568,cat:'rock',desc:'北海岸礁岩。'},
+  {name:'雙獅岩',lat:22.0855,lng:121.5673,cat:'rock',desc:'北海岸狀似伏臥獅子的海蝕岩。'},
+  {name:'軍艦岩',lat:22.0790,lng:121.5796,cat:'rock',desc:'東岸海中孤立礁岩，遠望宛如軍艦泊海。'},
+  {name:'龍頭岩',lat:22.0019,lng:121.5884,cat:'rock',desc:'蘭嶼最南端，造型如巨龍。'},
+  {name:'老人岩',lat:22.0035,lng:121.5723,cat:'rock',desc:'南端的海蝕岩。'},
+  {name:'鋼盔岩',lat:22.0239,lng:121.5978,cat:'rock',desc:'東南端形似頭盔的礁岩。'},
+  {name:'睡獅岩',lat:22.0198,lng:121.6004,cat:'rock',desc:'東南端伏臥獅子礁岩。'},
+  {name:'象鼻岩',lat:22.0179,lng:121.6004,cat:'rock',desc:'東南端天然海蝕拱門。'},
+  {name:'東清灣',lat:22.0573,lng:121.5654,cat:'beach',desc:'蘭嶼最美的弧形海灣。'},
+  {name:'野銀冷泉',lat:22.0330,lng:121.5762,cat:'beach',desc:'天然冷泉，水質清澈。'},
+  {name:'青青草原',lat:22.0056,lng:121.5722,cat:'beach',desc:'蘭嶼南端廣闊草原，賞夕陽聖地。'},
+  {name:'八代灣',lat:22.0319,lng:121.5511,cat:'beach',desc:'西南海岸海灣。'},
+  {name:'貝殼砂',lat:22.0753,lng:121.5677,cat:'beach',desc:'東北海岸的貝殼砂灘。'},
+  {name:'情人洞',lat:22.0620,lng:121.5735,cat:'beach',desc:'東岸海蝕洞。'},
+  {name:'蘭嶼潮池',lat:22.0076,lng:121.5940,cat:'beach',desc:'東南端浮潛勝地。'},
+  {name:'朗島祕境',lat:22.0812,lng:121.5225,cat:'beach',desc:'北海岸隱密小灣。'},
+  {name:'東清祕境',lat:22.0603,lng:121.5693,cat:'beach',desc:'東岸隱密海灣。'},
+  {name:'蘭嶼氣象站',lat:22.0370,lng:121.5583,cat:'mountain',desc:'中央氣象署觀測站，海拔 324 m。'},
+  {name:'小天池',lat:22.0774,lng:121.5101,cat:'mountain',desc:'西北山區的小型堰塞湖。'},
+  {name:'大天池',lat:22.0208,lng:121.5728,cat:'mountain',desc:'蘭嶼最大高山湖泊，達悟族禁忌之地。'},
+  {name:'一百分涼亭',lat:22.0805,lng:121.5359,cat:'mountain',desc:'東北環島公路觀景涼亭。'},
+  {name:'乳頭山',lat:22.0627,lng:121.5686,cat:'mountain',desc:'東岸環島公路旁的山徑。'},
+];
+
+const CAT_COLOR = {village:'#c84a2a',rock:'#7a4ec8',beach:'#1f8fb4',mountain:'#2f8a4b',facility:'#d49423'};
+const CAT_NAME = {village:'部落',rock:'奇岩景點',beach:'海岸/草原',mountain:'山區/水池',facility:'設施'};
+const CENTER = [121.545, 22.045];
+
+/* ===== Build MapLibre GL 3D map ===== */
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: {
+      osm: {
+        type: 'raster',
+        tiles: [
+          'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
+        ],
+        tileSize: 256,
+        attribution: '© OpenStreetMap',
+        maxzoom: 19
+      }
+    },
+    layers: [{id:'osm', type:'raster', source:'osm'}]
+  },
+  center: CENTER,
+  zoom: 13,
+  pitch: 60,
+  bearing: -20,
+  maxPitch: 85,
+  hash: true,  // URL hash 記住位置（分享方便）
+});
+
+map.addControl(new maplibregl.NavigationControl({visualizePitch:true}), 'bottom-right');
+map.addControl(new maplibregl.ScaleControl({maxWidth: 120, unit: 'metric'}), 'bottom-left');
+map.addControl(new maplibregl.AttributionControl({compact: true}));
+
+let terrainExag = 1.5;
+
+map.on('load', () => {
+  // AWS Terrain Tiles (terrarium encoding, no key needed)
+  map.addSource('terrain', {
+    type: 'raster-dem',
+    tiles: ['https://elevation-tiles-prod.s3.amazonaws.com/v2/terrarium/{z}/{x}/{y}.png'],
+    encoding: 'terrarium',
+    tileSize: 256,
+    maxzoom: 14,
+    attribution: '<a href="https://github.com/tilezen/joerd">AWS Terrain Tiles</a>'
+  });
+  map.setTerrain({source: 'terrain', exaggeration: terrainExag});
+
+  // Sky for that "looking out" feeling
+  map.setSky({
+    'sky-color': '#a0c8e0',
+    'sky-horizon-blend': 0.5,
+    'horizon-color': '#dfe9f0',
+    'horizon-fog-blend': 0.5,
+    'fog-color': '#e0e8ee',
+    'fog-ground-blend': 0.5,
+  });
+
+  // Hide loading
+  document.getElementById('loading').classList.add('hide');
+
+  // Add landmark markers
+  LANDMARKS.forEach(lm => {
+    const wrap = document.createElement('div');
+    wrap.style.position = 'relative';
+    const el = document.createElement('div');
+    el.className = 'lm-marker s-' + lm.cat;
+    el.title = lm.name;
+    wrap.appendChild(el);
+    // Hover label
+    const lbl = document.createElement('div');
+    lbl.className = 'lm-label';
+    lbl.textContent = lm.name;
+    lbl.style.display = 'none';
+    wrap.appendChild(lbl);
+    el.addEventListener('mouseenter', () => lbl.style.display = 'block');
+    el.addEventListener('mouseleave', () => lbl.style.display = 'none');
+
+    const popup = new maplibregl.Popup({offset: 14, closeButton: true})
+      .setHTML(`
+        <div class="pop-cat" style="background:${CAT_COLOR[lm.cat]}">${CAT_NAME[lm.cat]}</div>
+        <div class="pop-name">${lm.name}</div>
+        <div class="pop-desc">${lm.desc}</div>
+        <div class="pop-coord">${lm.lat.toFixed(5)}, ${lm.lng.toFixed(5)}</div>
+        <div class="pop-links">
+          <a href="https://www.google.com/maps/search/?api=1&query=${lm.lat},${lm.lng}" target="_blank">🗺️ 在 Google Maps 開啟</a>
+          <a href="https://www.openstreetmap.org/?mlat=${lm.lat}&mlon=${lm.lng}&zoom=17" target="_blank">🌍 在 OSM 開啟</a>
+        </div>
+      `);
+
+    new maplibregl.Marker({element: wrap}).setLngLat([lm.lng, lm.lat]).setPopup(popup).addTo(map);
+  });
+});
+
+map.on('error', e => console.error('Map error:', e));
+
+/* ===== Controls ===== */
+document.getElementById('exag').addEventListener('input', e => {
+  terrainExag = parseFloat(e.target.value);
+  document.getElementById('val-exag').textContent = terrainExag.toFixed(1) + '×';
+  map.setTerrain({source: 'terrain', exaggeration: terrainExag});
+});
+
+document.getElementById('pitch').addEventListener('input', e => {
+  const p = parseInt(e.target.value);
+  document.getElementById('val-pitch').textContent = p + '°';
+  map.setPitch(p);
+});
+
+map.on('pitch', () => {
+  const p = Math.round(map.getPitch());
+  document.getElementById('pitch').value = p;
+  document.getElementById('val-pitch').textContent = p + '°';
+});
+
+const VIEWS = {
+  overview: {center:[121.545,22.045], zoom:12.5, pitch:35, bearing:0},
+  north:    {center:[121.55, 22.02], zoom:13.5, pitch:65, bearing:-20},
+  south:    {center:[121.53, 22.08], zoom:13.5, pitch:65, bearing:160},
+  lighthouse:{center:[121.51, 22.05], zoom:14, pitch:75, bearing:85},
+};
+document.querySelectorAll('#controls .preset button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#controls .preset button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    const v = VIEWS[b.dataset.view];
+    map.flyTo({...v, duration:1800, essential:true});
+  });
+});
+
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape'){
+    map.getCanvas().focus();
+  }
+});
+</script>
+</body>
+</html>
